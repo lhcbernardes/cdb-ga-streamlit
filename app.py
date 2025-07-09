@@ -1,107 +1,95 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import random
-from deap import base, creator, tools, algorithms
 import matplotlib.pyplot as plt
+from deap import base, creator, tools, algorithms
+import random
 
-st.title("💼 Otimização de Portfólios de CDBs - Algoritmo Genético")
+st.title("📈 Otimização de Portfólio de CDBs com Algoritmo Genético (Sem Penalizações)")
 
-# Exemplo de CSV
-with st.expander("📌 Exemplo de CSV esperado"):
-    st.code("""Banco,Rentabilidade,Prazo,Liquidez
-Banco_1,13.5,365,Diária
-Banco_2,15.2,720,Vencimento
-Banco_3,12.8,540,Mensal""", language='csv')
+# Exibir exemplo de CSV
+st.markdown("### 📋 Formato esperado do arquivo CSV:")
+st.code("Banco,Rentabilidade,Prazo,Liquidez\nBanco_A,13.5,365,Diária")
 
-uploaded_file = st.file_uploader("🔹 Envie seu arquivo CSV de CDBs", type="csv")
-if uploaded_file:
-    cdbs = pd.read_csv(uploaded_file)
-    st.dataframe(cdbs.head())
+# Upload do CSV
+uploaded_file = st.file_uploader("📂 Envie seu arquivo CSV de CDBs", type=["csv"])
+if not uploaded_file:
+    st.warning("Envie um arquivo CSV com colunas: Banco, Rentabilidade, Prazo, Liquidez")
+    st.stop()
 
-    # Parâmetros ajustáveis
-    st.sidebar.header("⚙️ Parâmetros do GA")
-    POP_SIZE = st.sidebar.slider("Tamanho da população", 50, 500, 200)
-    NGEN = st.sidebar.slider("Número de gerações", 10, 300, 100)
-    CXPB = st.sidebar.slider("Probabilidade de crossover", 0.0, 1.0, 0.7)
-    MUTPB = st.sidebar.slider("Probabilidade de mutação", 0.0, 1.0, 0.3)
+# Carregar dados
+cdbs = pd.read_csv(uploaded_file)
+st.success(f"{len(cdbs)} CDBs carregados com sucesso.")
+st.dataframe(cdbs.head())
 
-    st.sidebar.header("⚙️ Restrições")
-    max_por_banco = st.sidebar.slider("Máximo de CDBs por banco", 1, 5, 2)
-    max_prazo = st.sidebar.slider("Prazo médio máximo (dias)", 180, 1500, 1000)
-    min_liquidez_diaria = st.sidebar.slider("Mínimo de CDBs com liquidez Diária", 1, 5, 1)
+# Parâmetros do GA
+st.sidebar.header("⚙️ Parâmetros do Algoritmo Genético")
+POP_SIZE = st.sidebar.slider("Tamanho da população", 50, 500, 200, 50)
+NGEN = st.sidebar.slider("Número de gerações", 10, 1000, 100, 10)
+CXPB = st.sidebar.slider("Probabilidade de crossover", 0.5, 1.0, 0.7, 0.05)
+MUTPB = st.sidebar.slider("Probabilidade de mutação", 0.1, 0.5, 0.3, 0.05)
 
-    # Função de avaliação
-    def evaluate(individual):
-        selected = cdbs.loc[np.array(individual) == 1]
+# Setup DEAP
+creator.create("FitnessMulti", base.Fitness, weights=(1.0, -1.0))  # Max retorno, min risco
+creator.create("Individual", list, fitness=creator.FitnessMulti)
 
-        if len(selected) != 5:
-            return (0.0, 9999.0)
-        if selected['Banco'].value_counts().max() > max_por_banco:
-            return (0.0, 9999.0)
-        if selected['Prazo'].mean() > max_prazo:
-            return (0.0, 9999.0)
-        if (selected['Liquidez'] == 'Diária').sum() < min_liquidez_diaria:
-            return (0.0, 9999.0)
+toolbox = base.Toolbox()
+toolbox.register("attr_bool", lambda: 1 if random.random() < 0.05 else 0)
+toolbox.register("individual", tools.initRepeat, creator.Individual, toolbox.attr_bool, n=len(cdbs))
+toolbox.register("population", tools.initRepeat, list, toolbox.individual)
+toolbox.register("mate", tools.cxUniform, indpb=0.7)
+toolbox.register("mutate", tools.mutFlipBit, indpb=0.05)
+toolbox.register("select", tools.selNSGA2)
 
-        retorno = selected['Rentabilidade'].mean()
-        risco = selected['Rentabilidade'].std() if len(selected) > 1 else 5.0
-        return (retorno, risco)
+# Função de avaliação SEM penalidades
+def evaluate(individual):
+    selected = cdbs.loc[np.array(individual) == 1]
+    retorno = selected['Rentabilidade'].mean() if not selected.empty else 0.0
+    risco = selected['Rentabilidade'].std() if len(selected) > 1 else 0.0
+    return (retorno, risco)
 
-    # Configuração DEAP
-    creator.create("FitnessMulti", base.Fitness, weights=(1.0, -1.0))
-    creator.create("Individual", list, fitness=creator.FitnessMulti)
+toolbox.register("evaluate", evaluate)
 
-    toolbox = base.Toolbox()
-    toolbox.register("attr_bool", lambda: 1 if random.random() < 0.05 else 0)
-    toolbox.register("individual", tools.initRepeat, creator.Individual, toolbox.attr_bool, n=len(cdbs))
-    toolbox.register("population", tools.initRepeat, list, toolbox.individual)
-    toolbox.register("mate", tools.cxUniform, indpb=0.7)
-    toolbox.register("mutate", tools.mutFlipBit, indpb=0.05)
-    toolbox.register("select", tools.selNSGA2)
-    toolbox.register("evaluate", evaluate)
+if st.button("🚀 Rodar otimização"):
+    st.info("Executando o algoritmo genético...")
 
-    if st.button("🚀 Rodar otimização"):
-        population = toolbox.population(n=POP_SIZE)
-        for ind in population:
+    population = toolbox.population(n=POP_SIZE)
+    for ind in population:
+        ind.fitness.values = toolbox.evaluate(ind)
+
+    log = []
+    for gen in range(1, NGEN + 1):
+        offspring = algorithms.varAnd(population, toolbox, cxpb=CXPB, mutpb=MUTPB)
+        for ind in offspring:
             ind.fitness.values = toolbox.evaluate(ind)
+        population = toolbox.select(population + offspring, k=POP_SIZE)
+        best = tools.sortNondominated(population, k=1, first_front_only=True)[0][0]
+        avg_ret = np.mean([ind.fitness.values[0] for ind in population])
+        log.append((gen, best.fitness.values[0], best.fitness.values[1], avg_ret))
+        st.write(f"Geração {gen}: Melhor Retorno={best.fitness.values[0]:.2f} | Risco={best.fitness.values[1]:.2f} | Média Retorno={avg_ret:.2f}")
 
-        log = []
-        for gen in range(1, NGEN + 1):
-            offspring = algorithms.varAnd(population, toolbox, cxpb=CXPB, mutpb=MUTPB)
-            for ind in offspring:
-                ind.fitness.values = toolbox.evaluate(ind)
+    # Gráfico de evolução
+    generations, best_returns, best_risks, avg_returns = zip(*log)
+    fig, ax = plt.subplots()
+    ax.plot(generations, best_returns, label="Melhor Retorno")
+    ax.plot(generations, best_risks, label="Menor Risco")
+    ax.plot(generations, avg_returns, label="Média Retorno", linestyle="--")
+    ax.set_xlabel("Geração")
+    ax.set_ylabel("Valor")
+    ax.set_title("Evolução do Algoritmo Genético")
+    ax.legend()
+    st.pyplot(fig)
 
-            population = toolbox.select(population + offspring, k=POP_SIZE)
-            best = tools.sortNondominated(population, k=1, first_front_only=True)[0][0]
-            log.append((gen, best.fitness.values[0], best.fitness.values[1]))
+    # Exportar os Top 5 portfólios
+    top5 = tools.sortNondominated(population, k=5, first_front_only=True)[0]
+    result_df = pd.DataFrame()
+    for i, ind in enumerate(top5):
+        selecionados = cdbs.loc[np.array(ind) == 1].copy()
+        selecionados["Portfólio"] = f"Portfólio_{i+1}"
+        selecionados["Retorno"] = ind.fitness.values[0]
+        selecionados["Risco"] = ind.fitness.values[1]
+        result_df = pd.concat([result_df, selecionados], ignore_index=True)
 
-            st.write(f"Geração {gen}: Retorno={best.fitness.values[0]:.2f}, Risco={best.fitness.values[1]:.2f}")
-
-        # Gráfico evolução
-        df_log = pd.DataFrame(log, columns=['Geração', 'Retorno', 'Risco'])
-        st.line_chart(df_log.set_index('Geração'))
-
-        # Gráfico Pareto
-        pareto = [ind.fitness.values for ind in population]
-        pareto = np.array([p for p in pareto if p[1] < 9999.0])
-        fig, ax = plt.subplots()
-        ax.scatter(pareto[:,1], pareto[:,0])
-        ax.set_xlabel("Risco (Desvio Padrão)")
-        ax.set_ylabel("Retorno Médio")
-        ax.set_title("Fronteira de Pareto Final")
-        st.pyplot(fig)
-
-        # Exportar top portfólios
-        top5 = tools.sortNondominated(population, k=5, first_front_only=True)[0]
-        result_df = pd.DataFrame()
-        for i, ind in enumerate(top5):
-            selecionados = cdbs.loc[np.array(ind) == 1].copy()
-            selecionados['Portfólio'] = f'Portfolio_{i+1}'
-            selecionados['Retorno Médio'] = ind.fitness.values[0]
-            selecionados['Risco'] = ind.fitness.values[1]
-            result_df = pd.concat([result_df, selecionados], ignore_index=True)
-
-        st.dataframe(result_df)
-        csv = result_df.to_csv(index=False).encode('utf-8-sig')
-        st.download_button("⬇️ Baixar Portfólios Otimizados", csv, "portfolios_otimizados.csv", "text/csv")
+    st.markdown("### 📊 Portfólios Otimizados (Top 5)")
+    st.dataframe(result_df)
+    st.download_button("📥 Baixar CSV dos Portfólios", result_df.to_csv(index=False).encode("utf-8-sig"), "portfolios_otimizados.csv")
