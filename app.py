@@ -66,7 +66,10 @@ if st.button("🚀 Rodar otimização"):
         best = tools.sortNondominated(population, k=1, first_front_only=True)[0][0]
         avg_ret = np.mean([ind.fitness.values[0] for ind in population])
         log.append((gen, best.fitness.values[0], best.fitness.values[1], avg_ret))
-        st.write(f"Geração {gen}: Melhor Retorno={best.fitness.values[0]:.2f} | Risco={best.fitness.values[1]:.2f} | Média Retorno={avg_ret:.2f}")
+
+    # Mostrar apenas a última geração
+    last_gen = log[-1]
+    st.success(f"Geração {last_gen[0]}: Retorno={last_gen[1]:.2f}, Risco={last_gen[2]:.2f}")
 
     # Gráfico de evolução
     generations, best_returns, best_risks, avg_returns = zip(*log)
