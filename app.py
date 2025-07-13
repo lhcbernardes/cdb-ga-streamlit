@@ -140,7 +140,7 @@ if st.button("🚀 Rodar otimização"):
         log = []
         best_score = -np.inf
         rounds_without_improvement = 0
-        early_stopping_rounds = 30
+        early_stopping_rounds = 50
 
         for gen in range(1, NGEN + 1):
             offspring = algorithms.varAnd(population, toolbox, cxpb=CXPB, mutpb=MUTPB)
