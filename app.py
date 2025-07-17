@@ -7,7 +7,7 @@ import random
 from datetime import datetime
 from io import BytesIO
 import requests
-import time  # Para simular delays leves, se necessário
+import time
 
 # Configuração da página com layout wide e ícone
 st.set_page_config(page_title="GA Tesouro Direto Otimizador", layout="wide", page_icon="📈")
@@ -131,7 +131,8 @@ def gerar_indices():
     return random.sample(range(len(raw_df)), N_ATIVOS)
 
 def repair(ind):
-    unique = list(dict.fromkeys(ind))  # Remove duplicatas
+    # Remove duplicatas
+    unique = list(dict.fromkeys(ind))
     while len(unique) < N_ATIVOS:
         novo = random.randint(0, len(raw_df) - 1)
         if novo not in unique:
@@ -165,7 +166,7 @@ def evaluate(ind):
         st.warning(f"Erro na avaliação: {e}")
         return (0.0,)
 
-# Agora, criar toolbox e registrar funções (depois das definições)
+# Cria toolbox e registrar funções (depois das definições)
 toolbox = base.Toolbox()
 toolbox.register("indices", gerar_indices)
 toolbox.register("individual", tools.initIterate, creator.Individual, toolbox.indices)
@@ -178,8 +179,8 @@ toolbox.register("evaluate", evaluate)
 # Função para plotar evolução com tema visual melhorado
 def plot_evolucao(log):
     gens, melhores, medias = zip(*log) if log else ([], [], [])
-    fig, ax = plt.subplots(figsize=(6, 4))  # Tamanho ajustado para melhor visual
-    plt.style.use('seaborn-v0_8')  # Tema moderno para gráficos
+    fig, ax = plt.subplots(figsize=(6, 4))
+    plt.style.use('seaborn-v0_8')
     ax.plot(gens, melhores, label="Melhor Score", color='green', linewidth=2)
     ax.plot(gens, medias, label="Média da População", color='blue', linestyle='--', linewidth=1.5)
     ax.set_title("Evolução da Otimização", fontsize=12)
@@ -193,7 +194,8 @@ def plot_evolucao(log):
 
 # Função principal de otimização com progresso e atualização em tempo real
 def rodar_otimizacao():
-    random.seed(42)  # Seed fixo para reproducibilidade
+    # Seed fixo para reproducibilidade
+    random.seed(42)
     pop = toolbox.population(n=POP_SIZE)
     for ind in pop:
         ind.fitness.values = toolbox.evaluate(ind)
@@ -204,7 +206,8 @@ def rodar_otimizacao():
     log = []
     best_score = -np.inf
     no_improvement = 0
-    early_stop_limit = 15  # Limite para early stopping
+    # Limite para limitar estagnação (early stopping)
+    early_stop_limit = 15
 
     for g in range(1, NGEN + 1):
         offspring = algorithms.varAnd(pop, toolbox, cxpb=CXPB, mutpb=MUTPB)
@@ -238,8 +241,8 @@ def rodar_otimizacao():
         if no_improvement >= early_stop_limit:
             st.info(f"🛑 Otimização parou na geração {g} devido a estagnação (sem melhorias).")
             break
-
-        time.sleep(0.1)  # Pequeno delay para efeito "tempo real" sem sobrecarregar
+        # Pequeno delay para efeito "tempo real" sem sobrecarregar
+        time.sleep(0.1)
 
     return pop, log
 
