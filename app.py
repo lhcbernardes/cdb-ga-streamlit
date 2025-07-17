@@ -7,58 +7,62 @@ import random
 from datetime import datetime
 from io import BytesIO
 import requests
+import time  # Para simular delays leves, se necessário
 
-# Configuração da página
-st.set_page_config(page_title="GA Tesouro Direto Otimizador", layout="wide")
-st.title("📈 Otimização de Portfólio - Tesouro Direto")
+# Configuração da página com layout wide e ícone
+st.set_page_config(page_title="GA Tesouro Direto Otimizador", layout="wide", page_icon="📈")
 
-# Injetar CSS para limitar o tamanho das figuras
+# Injetar CSS personalizado para melhores efeitos visuais (cores, botões, etc.)
 st.markdown(
     """
     <style>
-    .stImage > img, .element-container img {
-        max-width: 300px !important;
-        width: 100%;
-        height: auto;
+    .stButton > button {
+        background-color: #4CAF50; /* Verde atraente */
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        text-align: center;
+        text-decoration: none;
+        display: inline-block;
+        font-size: 16px;
+        margin: 4px 2px;
+        cursor: pointer;
+        border-radius: 12px;
+        transition: background-color 0.3s;
+    }
+    .stButton > button:hover {
+        background-color: #45a049;
+    }
+    .stSpinner > div {
+        color: #4CAF50;
+    }
+    .stAlert {
+        background-color: #f0f2f6;
+        border-radius: 8px;
+    }
+    .element-container .stMarkdown {
+        font-family: 'Arial', sans-serif;
     }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# Explicação do cálculo do score
-with st.expander("ℹ️ Como o Score é Calculado"):
+st.title("📈 Otimização de Portfólio - Tesouro Direto")
+
+# Expander com explicação resumida e visualmente atraente
+with st.expander("ℹ️ Como o Score é Calculado", expanded=False):
     st.markdown("""
-    O **score** é uma pontuação que avalia o desempenho de cada portfólio de títulos do Tesouro Direto, com base na estratégia escolhida. Cada estratégia foca em um aspecto diferente do investimento, como retorno, prazo, diversificação ou risco. Veja como cada uma funciona:
+    O **score** avalia seu portfólio de Tesouro Direto com base em diferentes estratégias. Escolha uma e otimize!
 
-    - **Média da Rentabilidade**  
-      Calcula a média simples das taxas de rentabilidade anual dos títulos selecionados no portfólio. É uma abordagem direta para avaliar o retorno esperado, sem considerar prazos ou riscos.  
-      *Exemplo*: Se o portfólio tem três títulos com rentabilidades de 10%, 12% e 14%, o score será (10 + 12 + 14) / 3 = 12%.  
-      *Ideal para*: Investidores que buscam simplicidade e priorizam o retorno médio.
-
-    - **Rentabilidade Total até o Vencimento**  
-      Considera a rentabilidade composta de cada título até sua data de vencimento, ajustada pelo prazo em anos. Essa estratégia reflete o retorno acumulado que você teria se mantivesse os títulos até o fim.  
-      *Exemplo*: Um título com rentabilidade de 10% ao ano e vencimento em 2 anos teria um retorno composto de (1 + 0.10)² - 1 = 21%. O score é a média desses retornos para o portfólio.  
-      *Ideal para*: Investidores focados no retorno de longo prazo, considerando o efeito dos juros compostos.
-
-    - **Rentabilidade Ajustada pelo Prazo**  
-      Calcula a média das rentabilidades, mas aplica uma penalidade baseada no prazo médio dos títulos (em dias). Títulos com prazos mais longos recebem uma pequena redução no score, refletindo o risco de manter o investimento por mais tempo.  
-      *Exemplo*: Um portfólio com rentabilidade média de 12% e prazo médio de 730 dias (2 anos) recebe uma penalidade de 0.005 * 730 / 365 = 0.01 (1%). O score seria 12% - 1% = 11%.  
-      *Ideal para*: Investidores que preferem equilibrar retorno e liquidez, evitando prazos muito longos.
-
-    - **Diversificação de Tipos**  
-      Calcula a média das rentabilidades e adiciona um bônus proporcional ao número de tipos diferentes de títulos no portfólio (como Tesouro Selic, IPCA+, etc.). Isso incentiva a diversificação para reduzir riscos.  
-      *Exemplo*: Um portfólio com rentabilidade média de 12% e 3 tipos diferentes de títulos ganha um bônus de 0.5 * 3 = 1.5%, resultando em um score de 12% + 1.5% = 13.5%.  
-      *Ideal para*: Investidores que valorizam a diversificação para maior estabilidade.
-
-    - **Índice Sharpe Simplificado**  
-      Mede a relação entre o retorno excedente (rentabilidade média menos a taxa livre de risco, como a Selic) e o risco (desvio padrão das rentabilidades dos títulos). Um score maior indica melhor retorno ajustado ao risco.  
-      *Exemplo*: Um portfólio com rentabilidade média de 12%, desvio padrão de 2% e taxa livre de risco de 10% tem um score de (12 - 10) / 2 = 1.0.  
-      *Ideal para*: Investidores que buscam otimizar o retorno considerando o risco envolvido.
+    - **Média da Rentabilidade** 📊: Média simples das taxas anuais. Ideal para simplicidade.
+    - **Rentabilidade Total até o Vencimento** ⏳: Retorno composto total, considerando prazos.
+    - **Rentabilidade Ajustada pelo Prazo** ⚖️: Penaliza prazos longos para equilibrar liquidez.
+    - **Diversificação de Tipos** 🌟: Bônus por variedade de títulos, reduzindo riscos.
     """)
 
-# Função para carregar e processar dados
-@st.cache_data
+# Função para carregar dados com cache para eficiência
+@st.cache_data(ttl=3600)  # Cache por 1 hora
 def carregar_dados():
     try:
         url = "https://www.tesourotransparente.gov.br/ckan/dataset/df56aa42-484a-4a59-8184-7676580c81e3/resource/796d2059-14e9-44e3-80c9-2d9e30b405c1/download/precotaxatesourodireto.csv"
@@ -70,13 +74,7 @@ def carregar_dados():
         content.seek(0)
         df = pd.read_csv(content, sep=";", encoding="utf-8")
         
-        # Verificar colunas obrigatórias
-        required_columns = ["Data Vencimento", "Data Base", "Taxa Compra Manha", "Tipo Titulo"]
-        missing_columns = [col for col in required_columns if col not in df.columns]
-        if missing_columns:
-            raise KeyError(f"Colunas ausentes no CSV: {missing_columns}")
-        
-        # Processar datas
+        # Processamento de dados
         df["Data Vencimento"] = pd.to_datetime(df["Data Vencimento"], dayfirst=True, errors="coerce")
         df["Data Base"] = pd.to_datetime(df["Data Base"], dayfirst=True, errors="coerce")
         df["Rentabilidade"] = df["Taxa Compra Manha"].str.replace(",", ".").astype(float)
@@ -84,86 +82,68 @@ def carregar_dados():
         return df
     except Exception as e:
         st.error(f"Erro ao carregar dados: {e}")
-        return None
+        return pd.DataFrame()
 
-# Carregar dados
-raw_df = carregar_dados()
-if raw_df is None:
+# Carregar dados com spinner visual
+with st.spinner("📥 Baixando dados do Tesouro Direto..."):
+    raw_df = carregar_dados()
+
+# Filtrar títulos futuros
+raw_df = raw_df[raw_df["Data Vencimento"] > datetime.now()].copy()
+
+if raw_df.empty:
+    st.error("Nenhum título com vencimento futuro disponível. Tente novamente mais tarde.")
     st.stop()
 
-# Filtrar títulos com vencimento futuro
-hoje = pd.to_datetime(datetime.now().date())
-raw_df = raw_df[raw_df["Data Vencimento"] > hoje].copy()
+st.success(f"✅ {len(raw_df)} títulos com vencimento futuro carregados.")
 
-st.success(f"{len(raw_df)} títulos com vencimento futuro carregados.")
-st.dataframe(raw_df.head())
+# Exibir prévia dos dados em um expander para não poluir a tela
+with st.expander("📋 Prévia dos Dados", expanded=False):
+    st.dataframe(raw_df.head())
 
-# Parâmetros do algoritmo
+# Sidebar com parâmetros, organizado visualmente
 st.sidebar.header("⚙️ Parâmetros do Algoritmo")
-POP_SIZE = st.sidebar.slider("Tamanho da População", 50, 500, 100, step=50)
-NGEN = st.sidebar.slider("Número de Gerações", 10, 500, 100, step=10)
-CXPB = st.sidebar.slider("Probabilidade de Crossover", 0.5, 1.0, 0.7, step=0.05)
-MUTPB = st.sidebar.slider("Probabilidade de Mutação", 0.1, 0.9, 0.5, step=0.05)
-N_ATIVOS = st.sidebar.slider("Títulos por Portfólio", 3, min(10, len(raw_df)), 5)
-risk_free_rate = st.sidebar.slider("Taxa Livre de Risco (%)", 5.0, 15.0, 10.0, step=0.5)
+POP_SIZE = st.sidebar.slider("Tamanho da População", 50, 500, 100, step=50, help="Número de portfólios iniciais.")
+NGEN = st.sidebar.slider("Máximo de Gerações", 10, 500, 100, step=10, help="Quantas iterações o algoritmo fará.")
+CXPB = st.sidebar.slider("Probabilidade de Crossover", 0.5, 1.0, 0.7, step=0.05, help="Chance de combinar portfólios.")
+MUTPB = st.sidebar.slider("Probabilidade de Mutação", 0.5, 1.0, 0.9, step=0.05, help="Chance de alterar portfólios.")
+N_ATIVOS = st.sidebar.slider("Títulos por Portfólio", 3, min(10, len(raw_df)), 5, help="Quantos títulos em cada portfólio.")
 estrategia = st.sidebar.selectbox("Estratégia de Score", [
     "Média da Rentabilidade",
     "Rentabilidade Total até o Vencimento",
     "Rentabilidade Ajustada pelo Prazo",
-    "Diversificação de Tipos",
-    "Índice Sharpe Simplificado"
-])
+    "Diversificação de Tipos"
+], help="Escolha como calcular o score.")
 
 # Validação de parâmetros
 if len(raw_df) < N_ATIVOS:
-    st.error(f"Quantidade de títulos disponíveis ({len(raw_df)}) menor que o número de títulos por portfólio ({N_ATIVOS}).")
+    st.error(f"❌ Quantidade de títulos disponíveis ({len(raw_df)}) é menor que o número por portfólio ({N_ATIVOS}). Ajuste os parâmetros.")
     st.stop()
 
-# Configurações do DEAP
+# Configurações do DEAP (somente se necessário, para evitar recriações)
 if not hasattr(creator, "FitnessMax"):
     creator.create("FitnessMax", base.Fitness, weights=(1.0,))
 if not hasattr(creator, "Individual"):
     creator.create("Individual", list, fitness=creator.FitnessMax)
 
-toolbox = base.Toolbox()
-
-# Funções do algoritmo genético
-def gerador_indices():
+# Funções auxiliares (definidas antes das registrações)
+def gerar_indices():
     return random.sample(range(len(raw_df)), N_ATIVOS)
 
-toolbox.register("indices", gerador_indices)
-toolbox.register("individual", tools.initIterate, creator.Individual, toolbox.indices)
-toolbox.register("population", tools.initRepeat, list, toolbox.individual)
-toolbox.register("mate", tools.cxTwoPoint)
+def repair(ind):
+    unique = list(dict.fromkeys(ind))  # Remove duplicatas
+    while len(unique) < N_ATIVOS:
+        novo = random.randint(0, len(raw_df) - 1)
+        if novo not in unique:
+            unique.append(novo)
+    return unique[:N_ATIVOS]
 
-def mutShuffle(ind, indpb):
+def mutShuffleDiverso(ind, indpb=0.9):
     if random.random() < indpb:
-        # Criar uma cópia do indivíduo como lista
         ind_copy = list(ind)
         random.shuffle(ind_copy)
-        # Aplicar reparo
-        ind_copy = repair_individual(ind_copy)
-        # Criar um novo indivíduo com os índices reparados
-        new_ind = creator.Individual(ind_copy)
-        # Copiar o fitness do indivíduo original, se existir
-        if hasattr(ind, 'fitness') and ind.fitness.valid:
-            new_ind.fitness.values = ind.fitness.values
-        return new_ind,
+        return creator.Individual(repair(ind_copy)),
     return ind,
-
-toolbox.register("mutate", mutShuffle, indpb=0.5)
-toolbox.register("select", tools.selTournament, tournsize=3)
-
-def repair_individual(ind):
-    unique_ind = list(dict.fromkeys(ind))  # Remove duplicatas mantendo ordem
-    attempts = 0
-    max_attempts = 100
-    while len(unique_ind) < N_ATIVOS and attempts < max_attempts:
-        new_idx = random.randint(0, len(raw_df) - 1)
-        if new_idx not in unique_ind:
-            unique_ind.append(new_idx)
-        attempts += 1
-    return unique_ind[:N_ATIVOS]
 
 def evaluate(ind):
     try:
@@ -178,103 +158,139 @@ def evaluate(ind):
             penalidade = 0.005 * selected["Prazo"].mean() / 365
             return (selected["Rentabilidade"].mean() - penalidade,)
         elif estrategia == "Diversificação de Tipos":
-            n_tipos = selected["Tipo Titulo"].nunique()
-            return (selected["Rentabilidade"].mean() + 0.5 * n_tipos,)
-        elif estrategia == "Índice Sharpe Simplificado":
-            media = selected["Rentabilidade"].mean()
-            desvio = selected["Rentabilidade"].std() or 1e-6
-            return ((media - risk_free_rate) / desvio,)
+            tipos = selected["Tipo Titulo"].nunique()
+            return (selected["Rentabilidade"].mean() + 0.5 * tipos,)
         return (0.0,)
     except Exception as e:
         st.warning(f"Erro na avaliação: {e}")
         return (0.0,)
 
+# Agora, criar toolbox e registrar funções (depois das definições)
+toolbox = base.Toolbox()
+toolbox.register("indices", gerar_indices)
+toolbox.register("individual", tools.initIterate, creator.Individual, toolbox.indices)
+toolbox.register("population", tools.initRepeat, list, toolbox.individual)
+toolbox.register("mate", tools.cxUniform, indpb=0.5)
+toolbox.register("mutate", mutShuffleDiverso)
+toolbox.register("select", tools.selTournament, tournsize=4)
 toolbox.register("evaluate", evaluate)
 
-# Função para plotar evolução
-def plot_evolution(log):
-    geracoes, melhores, medias = zip(*log)
-    fig, ax = plt.subplots(figsize=(3, 2), dpi=80)  # Tamanho reduzido
-    ax.plot(geracoes, melhores, label='Melhor Score')
-    ax.plot(geracoes, medias, label='Média da População', linestyle='--')
-    ax.set_title("Evolução do Score", fontsize=8)
-    ax.set_xlabel("Geração", fontsize=6)
-    ax.set_ylabel("Score", fontsize=6)
-    ax.legend(fontsize=6)
-    ax.tick_params(axis='both', which='major', labelsize=6)
-    plt.tight_layout()
+# Função para plotar evolução com tema visual melhorado
+def plot_evolucao(log):
+    gens, melhores, medias = zip(*log) if log else ([], [], [])
+    fig, ax = plt.subplots(figsize=(6, 4))  # Tamanho ajustado para melhor visual
+    plt.style.use('seaborn-v0_8')  # Tema moderno para gráficos
+    ax.plot(gens, melhores, label="Melhor Score", color='green', linewidth=2)
+    ax.plot(gens, medias, label="Média da População", color='blue', linestyle='--', linewidth=1.5)
+    ax.set_title("Evolução da Otimização", fontsize=12)
+    ax.set_xlabel("Geração", fontsize=10)
+    ax.set_ylabel("Score", fontsize=10)
+    ax.legend(fontsize=8)
+    ax.grid(True, linestyle='--', alpha=0.7)
+    ax.tick_params(labelsize=8)
+    fig.tight_layout()
     return fig
 
-# Função principal de execução
-@st.cache_data
-def rodar_otimizacao(_pop_size, _ngen, _cxpb, _mutpb, _n_ativos, _estrategia, _risk_free_rate):
-    pop = toolbox.population(n=_pop_size)
+# Função principal de otimização com progresso e atualização em tempo real
+def rodar_otimizacao():
+    random.seed(42)  # Seed fixo para reproducibilidade
+    pop = toolbox.population(n=POP_SIZE)
     for ind in pop:
-        if not isinstance(ind, creator.Individual):
-            st.error(f"Indivíduo inválido na inicialização: {type(ind)}")
-            return None, []
         ind.fitness.values = toolbox.evaluate(ind)
-    
+
+    # Placeholder para gráfico e barra de progresso
+    grafico_area = st.empty()
+    progress_bar = st.progress(0)
     log = []
-    for g in range(_ngen):
-        offspring = algorithms.varAnd(pop, toolbox, cxpb=_cxpb, mutpb=_mutpb)
+    best_score = -np.inf
+    no_improvement = 0
+    early_stop_limit = 15  # Limite para early stopping
+
+    for g in range(1, NGEN + 1):
+        offspring = algorithms.varAnd(pop, toolbox, cxpb=CXPB, mutpb=MUTPB)
         for ind in offspring:
-            if not isinstance(ind, creator.Individual):
-                st.error(f"Indivíduo inválido após varAnd: {type(ind)}")
-                return None, log
-            ind[:] = repair_individual(ind)
+            ind[:] = repair(ind)
             ind.fitness.values = toolbox.evaluate(ind)
-        pop = toolbox.select(pop + offspring, k=_pop_size)
+
+        # Elitismo: Manter os 10% melhores
+        elite = tools.selBest(pop, k=max(1, int(0.1 * POP_SIZE)))
+        pop = toolbox.select(pop + offspring, k=POP_SIZE - len(elite)) + elite
+
+        # Calcular métricas
         melhor = tools.selBest(pop, k=1)[0]
-        avg_score = np.mean([i.fitness.values[0] for i in pop])
-        log.append((g + 1, melhor.fitness.values[0], avg_score))
-    
+        media = np.mean([i.fitness.values[0] for i in pop if i.fitness.valid])
+        log.append((g, melhor.fitness.values[0], media))
+
+        # Atualizar gráfico em tempo real
+        fig = plot_evolucao(log)
+        grafico_area.pyplot(fig)
+        plt.close(fig)  # Fechar figura para evitar memória excessiva
+
+        # Atualizar progresso
+        progress_bar.progress(g / NGEN)
+
+        # Early stopping
+        if melhor.fitness.values[0] > best_score:
+            best_score = melhor.fitness.values[0]
+            no_improvement = 0
+        else:
+            no_improvement += 1
+        if no_improvement >= early_stop_limit:
+            st.info(f"🛑 Otimização parou na geração {g} devido a estagnação (sem melhorias).")
+            break
+
+        time.sleep(0.1)  # Pequeno delay para efeito "tempo real" sem sobrecarregar
+
     return pop, log
 
-# Botão para executar otimização
-if st.button("🚀 Rodar Otimização"):
-    with st.spinner("Executando algoritmo genético..."):
-        pop, log = rodar_otimizacao(POP_SIZE, NGEN, CXPB, MUTPB, N_ATIVOS, estrategia, risk_free_rate)
-        
-        if pop is None:
-            st.error("Erro na execução do algoritmo genético. Verifique os logs acima.")
+# Botão para rodar com estilo visual
+if st.button("🚀 Rodar Otimização", help="Inicie a otimização com os parâmetros selecionados."):
+    with st.spinner("🔄 Otimizando portfólio... Aguarde!"):
+        pop, log = rodar_otimizacao()
+
+        if not pop:
+            st.error("❌ Erro na otimização. Verifique os parâmetros e tente novamente.")
             st.stop()
-        
-        # Plotar evolução
-        grafico_area = st.empty()
-        fig = plot_evolution(log)
-        grafico_area.pyplot(fig, use_container_width=False)
-        plt.close(fig)
-        
-        # Melhor solução
-        melhor = tools.selBest(pop, k=1)[0]
-        resultado = raw_df.iloc[melhor].copy()
-        resultado["Score"] = melhor.fitness.values[0]
-        
-        st.markdown("### 🏆 Portfólio Ideal")
-        st.dataframe(resultado)
-        
-        # Detalhes do resultado
-        with st.expander("📊 Detalhes do Resultado"):
+
+        # Exibir resultados em colunas para melhor layout
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("🏆 Melhor Portfólio Encontrado")
+            melhor = tools.selBest(pop, k=1)[0]
+            resultado = raw_df.iloc[melhor].copy()
+            resultado["Score"] = melhor.fitness.values[0]
+            st.dataframe(resultado.style.format({"Rentabilidade": "{:.2f}%", "Prazo": "{:.0f} dias"}))
+
+        with col2:
+            st.subheader("📊 Detalhes do Melhor Portfólio")
             st.markdown(f"""
-            - **Score final**: `{melhor.fitness.values[0]:.4f}`
-            - **Estratégia usada**: `{estrategia}`
-            - **Quantidade de ativos**: `{N_ATIVOS}`
-            - **Melhor rentabilidade**: `{resultado["Rentabilidade"].mean():.2f}%`
-            - **Prazo médio (dias)**: `{resultado["Prazo"].mean():.0f}`
-            - **Tipos de títulos diferentes**: `{resultado["Tipo Titulo"].nunique()} ({", ".join(resultado["Tipo Titulo"].unique())})`
+            - **Score Final**: {melhor.fitness.values[0]:.4f}
+            - **Estratégia**: {estrategia}
+            - **Rentabilidade Média**: {resultado["Rentabilidade"].mean():.2f}%
+            - **Prazo Médio**: {resultado["Prazo"].mean():.0f} dias
+            - **Diversidade de Títulos**: {resultado["Tipo Titulo"].nunique()}
             """)
-        
-        # Gráfico de dispersão
-        with st.expander("📈 Dispersão de Rendimento vs Retorno"):
-            fig, ax = plt.subplots(figsize=(3, 2), dpi=80)  # Tamanho reduzido
-            riscos = [raw_df.iloc[ind]["Rentabilidade"].std() or 0 for ind in pop]
-            retornos = [raw_df.iloc[ind]["Rentabilidade"].mean() for ind in pop]
-            ax.scatter(riscos, retornos, alpha=0.6)
-            ax.set_xlabel("Dispersão de Yields (std, risco)", fontsize=6)
-            ax.set_ylabel("Retorno Médio (%)", fontsize=6)
-            ax.set_title("Dispersão vs Retorno nos Portfólios", fontsize=8)
-            ax.tick_params(axis='both', which='major', labelsize=6)
-            plt.tight_layout()
-            st.pyplot(fig, use_container_width=False)
-            plt.close(fig)
+
+        # Gráfico de Pareto em expander
+        with st.expander("📈 Gráfico de Pareto (Risco vs. Retorno)", expanded=True):
+            fig, ax = plt.subplots(figsize=(6, 4))
+            plt.style.use('seaborn-v0_8')
+            riscos = []
+            retornos = []
+            for ind in pop:
+                dados = raw_df.iloc[ind]
+                riscos.append(dados["Rentabilidade"].std() or 0)
+                retornos.append(dados["Rentabilidade"].mean())
+
+            ax.scatter(riscos, retornos, alpha=0.6, color='blue', label='Portfólios')
+            # Destacar o melhor
+            melhor_dados = raw_df.iloc[melhor]
+            ax.scatter(melhor_dados["Rentabilidade"].std() or 0, melhor_dados["Rentabilidade"].mean(), color='red', s=100, label='Melhor Portfólio')
+            ax.set_title("Fronteira de Pareto", fontsize=12)
+            ax.set_xlabel("Risco (Desvio Padrão)", fontsize=10)
+            ax.set_ylabel("Retorno Médio (%)", fontsize=10)
+            ax.legend(fontsize=8)
+            ax.grid(True, linestyle='--', alpha=0.7)
+            ax.tick_params(labelsize=8)
+            fig.tight_layout()
+            st.pyplot(fig)
