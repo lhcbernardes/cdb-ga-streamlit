@@ -8,6 +8,7 @@ from datetime import datetime
 from io import BytesIO
 import requests
 import time
+import copy
 
 # Configuração da página com layout wide e ícone
 st.set_page_config(page_title="GA Tesouro Direto Otimizador", layout="wide", page_icon="📈")
@@ -59,6 +60,8 @@ with st.expander("ℹ️ Como o Score é Calculado", expanded=False):
     - **Rentabilidade Total até o Vencimento** ⏳: Retorno composto total, considerando prazos.
     - **Rentabilidade Ajustada pelo Prazo** ⚖️: Penaliza prazos longos para equilibrar liquidez.
     - **Diversificação de Tipos** 🌟: Bônus por variedade de títulos, reduzindo riscos.
+    - **Sharpe Ratio** 📈: Retorno ajustado pelo risco (novo!).
+    - **Multi-Objetivo** 🎯: Otimiza retorno, risco e diversificação simultaneamente.
     """)
 
 # Função para carregar dados com cache para eficiência
@@ -112,26 +115,43 @@ estrategia = st.sidebar.selectbox("Estratégia de Score", [
     "Média da Rentabilidade",
     "Rentabilidade Total até o Vencimento",
     "Rentabilidade Ajustada pelo Prazo",
-    "Diversificação de Tipos"
+    "Diversificação de Tipos",
+    "Sharpe Ratio",
+    "Multi-Objetivo"
 ], help="Escolha como calcular o score.")
+
+# Parâmetros avançados
+st.sidebar.header("🔧 Parâmetros Avançados")
+ELITE_SIZE = st.sidebar.slider("Tamanho da Elite (%)", 5, 20, 10, step=5, help="Percentual dos melhores indivíduos a preservar.")
+TOURNAMENT_SIZE = st.sidebar.slider("Tamanho do Torneio", 2, 8, 4, step=1, help="Tamanho do torneio para seleção.")
+DIVERSITY_THRESHOLD = st.sidebar.slider("Limiar de Diversidade", 0.1, 0.9, 0.3, step=0.1, help="Limiar para reinicialização por diversidade.")
 
 # Validação de parâmetros
 if len(raw_df) < N_ATIVOS:
     st.error(f"❌ Quantidade de títulos disponíveis ({len(raw_df)}) é menor que o número por portfólio ({N_ATIVOS}). Ajuste os parâmetros.")
     st.stop()
 
-# Configurações do DEAP (somente se necessário, para evitar recriações)
-if not hasattr(creator, "FitnessMax"):
-    creator.create("FitnessMax", base.Fitness, weights=(1.0,))
-if not hasattr(creator, "Individual"):
-    creator.create("Individual", list, fitness=creator.FitnessMax)
+# Configurações do DEAP - CORREÇÃO DOS ERROS DE LINTER
+try:
+    del creator.FitnessMax  # type: ignore
+except:
+    pass
+try:
+    del creator.Individual  # type: ignore
+except:
+    pass
 
-# Funções auxiliares (definidas antes das registrações)
+# type: ignore - DEAP cria atributos dinamicamente
+creator.create("FitnessMax", base.Fitness, weights=(1.0,))  # type: ignore
+creator.create("Individual", list, fitness=creator.FitnessMax)  # type: ignore
+
+# Funções auxiliares melhoradas
 def gerar_indices():
+    """Gera índices únicos para representar um portfólio"""
     return random.sample(range(len(raw_df)), N_ATIVOS)
 
 def repair(ind):
-    # Remove duplicatas
+    """Repara indivíduo removendo duplicatas e garantindo tamanho correto"""
     unique = list(dict.fromkeys(ind))
     while len(unique) < N_ATIVOS:
         novo = random.randint(0, len(raw_df) - 1)
@@ -139,41 +159,122 @@ def repair(ind):
             unique.append(novo)
     return unique[:N_ATIVOS]
 
-def mutShuffleDiverso(ind, indpb=0.9):
+def calcular_diversidade(populacao):
+    """Calcula a diversidade da população baseada na distância média entre indivíduos"""
+    if len(populacao) < 2:
+        return 0.0
+    
+    distancias = []
+    for i in range(len(populacao)):
+        for j in range(i+1, len(populacao)):
+            # Distância baseada na sobreposição de títulos
+            overlap = len(set(populacao[i]) & set(populacao[j])) / N_ATIVOS
+            distancias.append(1 - overlap)
+    
+    return np.mean(distancias) if distancias else 0.0
+
+# Operadores genéticos melhorados
+def crossover_uniforme(ind1, ind2):
+    """Crossover uniforme melhorado para portfólios"""
+    child1 = []
+    child2 = []
+    
+    # Usar máscara aleatória para decidir de qual pai pegar cada posição
+    mask = [random.random() < 0.5 for _ in range(N_ATIVOS)]
+    
+    for i in range(N_ATIVOS):
+        if mask[i]:
+            child1.append(ind1[i])
+            child2.append(ind2[i])
+        else:
+            child1.append(ind2[i])
+            child2.append(ind1[i])
+    
+    # Reparar duplicatas
+    child1 = repair(child1)
+    child2 = repair(child2)
+    
+    return creator.Individual(child1), creator.Individual(child2)  # type: ignore
+
+def mutacao_inteligente(ind, indpb=0.3):
+    """Mutação inteligente que preserva alguns títulos bons"""
     if random.random() < indpb:
         ind_copy = list(ind)
-        random.shuffle(ind_copy)
-        return creator.Individual(repair(ind_copy)),
+        
+        # Mutação por substituição parcial
+        num_mutations = max(1, int(N_ATIVOS * 0.3))  # 30% dos títulos
+        positions = random.sample(range(N_ATIVOS), num_mutations)
+        
+        for pos in positions:
+            # Substituir por um título aleatório
+            novo_titulo = random.randint(0, len(raw_df) - 1)
+            while novo_titulo in ind_copy:
+                novo_titulo = random.randint(0, len(raw_df) - 1)
+            ind_copy[pos] = novo_titulo
+        
+        return creator.Individual(ind_copy),  # type: ignore
+    return ind,
+
+def mutacao_swap(ind, indpb=0.2):
+    """Mutação por troca de posições"""
+    if random.random() < indpb:
+        ind_copy = list(ind)
+        # Trocar duas posições aleatórias
+        pos1, pos2 = random.sample(range(N_ATIVOS), 2)
+        ind_copy[pos1], ind_copy[pos2] = ind_copy[pos2], ind_copy[pos1]
+        return creator.Individual(ind_copy),  # type: ignore
     return ind,
 
 def evaluate(ind):
+    """Função de avaliação melhorada com múltiplas estratégias"""
     try:
         selected = raw_df.iloc[ind]
+        
         if estrategia == "Média da Rentabilidade":
             return (selected["Rentabilidade"].mean(),)
+        
         elif estrategia == "Rentabilidade Total até o Vencimento":
             anos = selected["Prazo"] / 365
             total = ((1 + selected["Rentabilidade"] / 100) ** anos - 1).mean()
             return (total * 100,)
+        
         elif estrategia == "Rentabilidade Ajustada pelo Prazo":
             penalidade = 0.005 * selected["Prazo"].mean() / 365
             return (selected["Rentabilidade"].mean() - penalidade,)
+        
         elif estrategia == "Diversificação de Tipos":
             tipos = selected["Tipo Titulo"].nunique()
             return (selected["Rentabilidade"].mean() + 0.5 * tipos,)
+        
+        elif estrategia == "Sharpe Ratio":
+            retorno = selected["Rentabilidade"].mean()
+            risco = selected["Rentabilidade"].std() or 0.1  # Evitar divisão por zero
+            sharpe = retorno / risco if risco > 0 else 0
+            return (sharpe,)
+        
+        elif estrategia == "Multi-Objetivo":
+            # Retorno, risco e diversificação
+            retorno = selected["Rentabilidade"].mean()
+            risco = selected["Rentabilidade"].std() or 0.1
+            diversidade = selected["Tipo Titulo"].nunique()
+            # Score composto
+            score = retorno - 0.5 * risco + 0.3 * diversidade
+            return (score,)
+        
         return (0.0,)
     except Exception as e:
         st.warning(f"Erro na avaliação: {e}")
         return (0.0,)
 
-# Cria toolbox e registrar funções (depois das definições)
+# Cria toolbox e registrar funções melhoradas
 toolbox = base.Toolbox()
 toolbox.register("indices", gerar_indices)
-toolbox.register("individual", tools.initIterate, creator.Individual, toolbox.indices)
-toolbox.register("population", tools.initRepeat, list, toolbox.individual)
-toolbox.register("mate", tools.cxUniform, indpb=0.5)
-toolbox.register("mutate", mutShuffleDiverso)
-toolbox.register("select", tools.selTournament, tournsize=4)
+toolbox.register("individual", tools.initIterate, creator.Individual, toolbox.indices)  # type: ignore
+toolbox.register("population", tools.initRepeat, list, toolbox.individual)  # type: ignore
+toolbox.register("mate", crossover_uniforme)
+toolbox.register("mutate", mutacao_inteligente)
+toolbox.register("mutate_swap", mutacao_swap)
+toolbox.register("select", tools.selTournament, tournsize=TOURNAMENT_SIZE)
 toolbox.register("evaluate", evaluate)
 
 # Função para plotar evolução com tema visual melhorado
@@ -192,13 +293,16 @@ def plot_evolucao(log):
     fig.tight_layout()
     return fig
 
-# Função principal de otimização com progresso e atualização em tempo real
+# Função principal de otimização melhorada
 def rodar_otimizacao():
+    """Algoritmo genético melhorado com diversidade e early stopping"""
     # Seed fixo para reproducibilidade
     random.seed(42)
-    pop = toolbox.population(n=POP_SIZE)
+    
+    # Inicializar população
+    pop = toolbox.population(n=POP_SIZE)  # type: ignore
     for ind in pop:
-        ind.fitness.values = toolbox.evaluate(ind)
+        ind.fitness.values = toolbox.evaluate(ind)  # type: ignore
 
     # Placeholder para gráfico e barra de progresso
     grafico_area = st.empty()
@@ -206,18 +310,21 @@ def rodar_otimizacao():
     log = []
     best_score = -np.inf
     no_improvement = 0
-    # Limite para limitar estagnação (early stopping)
-    early_stop_limit = 15
+    early_stop_limit = 20  # Aumentado para dar mais chance
+    elite_size = max(1, int(POP_SIZE * ELITE_SIZE / 100))
 
     for g in range(1, NGEN + 1):
+        # Gerar offspring
         offspring = algorithms.varAnd(pop, toolbox, cxpb=CXPB, mutpb=MUTPB)
+        
+        # Reparar e avaliar offspring
         for ind in offspring:
             ind[:] = repair(ind)
-            ind.fitness.values = toolbox.evaluate(ind)
+            ind.fitness.values = toolbox.evaluate(ind)  # type: ignore
 
-        # Elitismo: Manter os 10% melhores
-        elite = tools.selBest(pop, k=max(1, int(0.1 * POP_SIZE)))
-        pop = toolbox.select(pop + offspring, k=POP_SIZE - len(elite)) + elite
+        # Elitismo melhorado
+        elite = tools.selBest(pop, k=elite_size)
+        pop = toolbox.select(pop + offspring, k=POP_SIZE - len(elite)) + elite  # type: ignore
 
         # Calcular métricas
         melhor = tools.selBest(pop, k=1)[0]
@@ -227,22 +334,35 @@ def rodar_otimizacao():
         # Atualizar gráfico em tempo real
         fig = plot_evolucao(log)
         grafico_area.pyplot(fig)
-        plt.close(fig)  # Fechar figura para evitar memória excessiva
+        plt.close(fig)
 
         # Atualizar progresso
         progress_bar.progress(g / NGEN)
 
-        # Early stopping
+        # Early stopping melhorado
         if melhor.fitness.values[0] > best_score:
             best_score = melhor.fitness.values[0]
             no_improvement = 0
         else:
             no_improvement += 1
+        
+        # Verificar diversidade
+        diversidade = calcular_diversidade(pop)
+        if diversidade < DIVERSITY_THRESHOLD and g > 10:
+            # Reinicializar parte da população para manter diversidade
+            num_reinit = int(POP_SIZE * 0.2)
+            for _ in range(num_reinit):
+                novo_ind = toolbox.individual()  # type: ignore
+                novo_ind.fitness.values = toolbox.evaluate(novo_ind)  # type: ignore
+                pop[random.randint(0, len(pop)-1)] = novo_ind
+            st.info(f"🔄 Reinicialização por diversidade na geração {g}")
+        
         if no_improvement >= early_stop_limit:
             st.info(f"🛑 Otimização parou na geração {g} devido a estagnação (sem melhorias).")
             break
-        # Pequeno delay para efeito "tempo real" sem sobrecarregar
-        time.sleep(0.1)
+        
+        # Pequeno delay para efeito "tempo real"
+        time.sleep(0.05)  # Reduzido para melhor performance
 
     return pop, log
 
@@ -272,6 +392,7 @@ if st.button("🚀 Rodar Otimização", help="Inicie a otimização com os parâ
             - **Rentabilidade Média**: {resultado["Rentabilidade"].mean():.2f}%
             - **Prazo Médio**: {resultado["Prazo"].mean():.0f} dias
             - **Diversidade de Títulos**: {resultado["Tipo Titulo"].nunique()}
+            - **Risco (Desvio Padrão)**: {resultado["Rentabilidade"].std():.2f}%
             """)
 
         # Gráfico de Pareto em expander
@@ -296,4 +417,20 @@ if st.button("🚀 Rodar Otimização", help="Inicie a otimização com os parâ
             ax.grid(True, linestyle='--', alpha=0.7)
             ax.tick_params(labelsize=8)
             fig.tight_layout()
+            st.pyplot(fig)
+
+        # Análise de diversidade da população final
+        with st.expander("🌐 Análise de Diversidade da População", expanded=False):
+            diversidade_final = calcular_diversidade(pop)
+            st.metric("Diversidade da População Final", f"{diversidade_final:.3f}")
+            
+            # Histograma de scores
+            scores = [ind.fitness.values[0] for ind in pop]
+            fig, ax = plt.subplots(figsize=(6, 4))
+            ax.hist(scores, bins=20, alpha=0.7, color='green')
+            ax.axvline(float(np.mean(scores)), color='red', linestyle='--', label='Média')
+            ax.set_title("Distribuição de Scores da População Final")
+            ax.set_xlabel("Score")
+            ax.set_ylabel("Frequência")
+            ax.legend()
             st.pyplot(fig)
