@@ -9,6 +9,7 @@ from io import BytesIO
 import requests
 import time
 import copy
+import concurrent.futures
 
 # Configuração da página com layout wide e ícone
 st.set_page_config(page_title="GA Tesouro Direto Otimizador", layout="wide", page_icon="📈")
@@ -277,6 +278,10 @@ toolbox.register("mutate_swap", mutacao_swap)
 toolbox.register("select", tools.selTournament, tournsize=TOURNAMENT_SIZE)
 toolbox.register("evaluate", evaluate)
 
+# Paralelização: usar ThreadPoolExecutor para compatibilidade com Streamlit
+pool = concurrent.futures.ThreadPoolExecutor()
+toolbox.register("map", pool.map)
+
 # Função para plotar evolução com tema visual melhorado
 def plot_evolucao(log):
     gens, melhores, medias = zip(*log) if log else ([], [], [])
@@ -301,8 +306,10 @@ def rodar_otimizacao():
     
     # Inicializar população
     pop = toolbox.population(n=POP_SIZE)  # type: ignore
-    for ind in pop:
-        ind.fitness.values = toolbox.evaluate(ind)  # type: ignore
+    # Avaliação paralela da população inicial
+    fitnesses = list(toolbox.__getattribute__('map')(toolbox.__getattribute__('evaluate'), pop))
+    for ind, fit in zip(pop, fitnesses):
+        ind.fitness.values = fit  # type: ignore
 
     # Placeholder para gráfico e barra de progresso
     grafico_area = st.empty()
@@ -314,13 +321,11 @@ def rodar_otimizacao():
     elite_size = max(1, int(POP_SIZE * ELITE_SIZE / 100))
 
     for g in range(1, NGEN + 1):
-        # Gerar offspring
         offspring = algorithms.varAnd(pop, toolbox, cxpb=CXPB, mutpb=MUTPB)
-        
-        # Reparar e avaliar offspring
         for ind in offspring:
             ind[:] = repair(ind)
-            ind.fitness.values = toolbox.evaluate(ind)  # type: ignore
+            fit = toolbox.__getattribute__('evaluate')(ind)
+            ind.fitness.values = fit  # Avaliação sequencial para garantir atualização do gráfico
 
         # Elitismo melhorado
         elite = tools.selBest(pop, k=elite_size)
@@ -355,7 +360,6 @@ def rodar_otimizacao():
                 novo_ind = toolbox.individual()  # type: ignore
                 novo_ind.fitness.values = toolbox.evaluate(novo_ind)  # type: ignore
                 pop[random.randint(0, len(pop)-1)] = novo_ind
-            st.info(f"🔄 Reinicialização por diversidade na geração {g}")
         
         if no_improvement >= early_stop_limit:
             st.info(f"🛑 Otimização parou na geração {g} devido a estagnação (sem melhorias).")
@@ -394,6 +398,22 @@ if st.button("🚀 Rodar Otimização", help="Inicie a otimização com os parâ
             - **Diversidade de Títulos**: {resultado["Tipo Titulo"].nunique()}
             - **Risco (Desvio Padrão)**: {resultado["Rentabilidade"].std():.2f}%
             """)
+            # --- EXPLICAÇÕES AUTOMÁTICAS ---
+            # Calcular métricas do melhor portfólio
+            melhor_div = resultado["Tipo Titulo"].nunique()
+            melhor_risco = resultado["Rentabilidade"].std()
+            melhor_retorno = resultado["Rentabilidade"].mean()
+            # Calcular métricas da população
+            divs = [raw_df.iloc[ind]["Tipo Titulo"].nunique() for ind in pop]
+            riscos = [raw_df.iloc[ind]["Rentabilidade"].std() for ind in pop]
+            retornos = [raw_df.iloc[ind]["Rentabilidade"].mean() for ind in pop]
+            # Percentis
+            pct_div = 100 * sum(melhor_div >= d for d in divs) / len(divs)
+            pct_risco = 100 * sum(melhor_risco < r for r in riscos) / len(riscos)
+            pct_retorno = 100 * sum(melhor_retorno > ret for ret in retornos) / len(retornos)
+            st.info(f"Seu portfólio é mais diversificado que {pct_div:.0f}% dos gerados.")
+            st.info(f"Seu portfólio tem risco menor que {pct_risco:.0f}% dos gerados.")
+            st.info(f"Seu portfólio tem retorno maior que {pct_retorno:.0f}% dos gerados.")
 
         # Gráfico de Pareto em expander
         with st.expander("📈 Gráfico de Pareto (Risco vs. Retorno)", expanded=True):
