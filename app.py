@@ -38,9 +38,10 @@ st.markdown(
     .stSpinner > div {
         color: #4CAF50;
     }
-    .stAlert {
-        background-color: #f0f2f6;
-        border-radius: 8px;
+    .stAlert, .stAlert * {
+        color: #000 !important;
+        background-color: #f0f2f6 !important;
+        opacity: 1 !important;
     }
     .element-container .stMarkdown {
         font-family: 'Arial', sans-serif;
@@ -138,13 +139,18 @@ try:
 except:
     pass
 try:
+    del creator.FitnessMulti  # type: ignore
+except:
+    pass
+try:
     del creator.Individual  # type: ignore
 except:
     pass
 
-# type: ignore - DEAP cria atributos dinamicamente
+# Fitness para problemas single-objective e multi-objective
 creator.create("FitnessMax", base.Fitness, weights=(1.0,))  # type: ignore
-creator.create("Individual", list, fitness=creator.FitnessMax)  # type: ignore
+creator.create("FitnessMulti", base.Fitness, weights=(1.0, -1.0, 1.0))  # Retorno (max), Risco (min), Diversidade (max)
+creator.create("Individual", list, fitness=creator.FitnessMulti)  # type: ignore
 
 # Funções auxiliares melhoradas
 def gerar_indices():
@@ -226,46 +232,19 @@ def mutacao_swap(ind, indpb=0.2):
         return creator.Individual(ind_copy),  # type: ignore
     return ind,
 
+# Função de avaliação adaptada para NSGA-II
+
 def evaluate(ind):
-    """Função de avaliação melhorada com múltiplas estratégias"""
     try:
         selected = raw_df.iloc[ind]
-        
-        if estrategia == "Média da Rentabilidade":
-            return (selected["Rentabilidade"].mean(),)
-        
-        elif estrategia == "Rentabilidade Total até o Vencimento":
-            anos = selected["Prazo"] / 365
-            total = ((1 + selected["Rentabilidade"] / 100) ** anos - 1).mean()
-            return (total * 100,)
-        
-        elif estrategia == "Rentabilidade Ajustada pelo Prazo":
-            penalidade = 0.005 * selected["Prazo"].mean() / 365
-            return (selected["Rentabilidade"].mean() - penalidade,)
-        
-        elif estrategia == "Diversificação de Tipos":
-            tipos = selected["Tipo Titulo"].nunique()
-            return (selected["Rentabilidade"].mean() + 0.5 * tipos,)
-        
-        elif estrategia == "Sharpe Ratio":
-            retorno = selected["Rentabilidade"].mean()
-            risco = selected["Rentabilidade"].std() or 0.1  # Evitar divisão por zero
-            sharpe = retorno / risco if risco > 0 else 0
-            return (sharpe,)
-        
-        elif estrategia == "Multi-Objetivo":
-            # Retorno, risco e diversificação
-            retorno = selected["Rentabilidade"].mean()
-            risco = selected["Rentabilidade"].std() or 0.1
-            diversidade = selected["Tipo Titulo"].nunique()
-            # Score composto
-            score = retorno - 0.5 * risco + 0.3 * diversidade
-            return (score,)
-        
-        return (0.0,)
+        # Sempre retornar os três objetivos para NSGA-II
+        retorno = selected["Rentabilidade"].mean()
+        risco = selected["Rentabilidade"].std() or 0.1
+        diversidade = selected["Tipo Titulo"].nunique()
+        return (retorno, risco, diversidade)
     except Exception as e:
         st.warning(f"Erro na avaliação: {e}")
-        return (0.0,)
+        return (0.0, 0.1, 1.0)
 
 # Cria toolbox e registrar funções melhoradas
 toolbox = base.Toolbox()
@@ -275,8 +254,13 @@ toolbox.register("population", tools.initRepeat, list, toolbox.individual)  # ty
 toolbox.register("mate", crossover_uniforme)
 toolbox.register("mutate", mutacao_inteligente)
 toolbox.register("mutate_swap", mutacao_swap)
-toolbox.register("select", tools.selTournament, tournsize=TOURNAMENT_SIZE)
 toolbox.register("evaluate", evaluate)
+
+# Seleção adaptada: NSGA-II para multiobjetivo, torneio para os demais
+toolbox.unregister("select") if hasattr(toolbox, "select") else None
+toolbox.register("select", tools.selNSGA2)
+# Trocar fitness dos indivíduos existentes para multiobjetivo
+creator.Individual.fitness = creator.FitnessMulti
 
 # Paralelização: usar ThreadPoolExecutor para compatibilidade com Streamlit
 pool = concurrent.futures.ThreadPoolExecutor()
