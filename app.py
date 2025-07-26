@@ -56,14 +56,13 @@ st.title("📈 Otimização de Portfólio - Tesouro Direto")
 # Expander com explicação resumida e visualmente atraente
 with st.expander("ℹ️ Como o Score é Calculado", expanded=False):
     st.markdown("""
-    O **score** avalia seu portfólio de Tesouro Direto com base em diferentes estratégias. Escolha uma e otimize!
+    O **score** do portfólio é calculado de forma multiobjetivo, otimizando **retorno**, **risco** e **diversificação** simultaneamente usando NSGA-II. O algoritmo busca automaticamente o melhor equilíbrio entre esses critérios, gerando uma fronteira de Pareto com várias opções de portfólios para você escolher.
 
-    - **Média da Rentabilidade** 📊: Média simples das taxas anuais. Ideal para simplicidade.
-    - **Rentabilidade Total até o Vencimento** ⏳: Retorno composto total, considerando prazos.
-    - **Rentabilidade Ajustada pelo Prazo** ⚖️: Penaliza prazos longos para equilibrar liquidez.
-    - **Diversificação de Tipos** 🌟: Bônus por variedade de títulos, reduzindo riscos.
-    - **Sharpe Ratio** 📈: Retorno ajustado pelo risco (novo!).
-    - **Multi-Objetivo** 🎯: Otimiza retorno, risco e diversificação simultaneamente.
+    - **Retorno** 📊: Média das taxas anuais dos títulos do portfólio.
+    - **Risco** ⏳: Desvio padrão das rentabilidades, indicando a volatilidade.
+    - **Diversificação** 🌟: Quantidade de tipos diferentes de títulos no portfólio.
+
+    > O app sempre utiliza otimização multiobjetivo, não sendo necessário escolher uma estratégia manualmente.
     """)
 
 # Função para carregar dados com cache para eficiência
@@ -108,25 +107,19 @@ with st.expander("📋 Prévia dos Dados", expanded=False):
 
 # Sidebar com parâmetros, organizado visualmente
 st.sidebar.header("⚙️ Parâmetros do Algoritmo")
-POP_SIZE = st.sidebar.slider("Tamanho da População", 50, 500, 100, step=50, help="Número de portfólios iniciais.")
-NGEN = st.sidebar.slider("Máximo de Gerações", 10, 500, 100, step=10, help="Quantas iterações o algoritmo fará.")
-CXPB = st.sidebar.slider("Probabilidade de Crossover", 0.5, 1.0, 0.7, step=0.05, help="Chance de combinar portfólios.")
-MUTPB = st.sidebar.slider("Probabilidade de Mutação", 0.5, 1.0, 0.9, step=0.05, help="Chance de alterar portfólios.")
-N_ATIVOS = st.sidebar.slider("Títulos por Portfólio", 3, min(10, len(raw_df)), 5, help="Quantos títulos em cada portfólio.")
-estrategia = st.sidebar.selectbox("Estratégia de Score", [
-    "Média da Rentabilidade",
-    "Rentabilidade Total até o Vencimento",
-    "Rentabilidade Ajustada pelo Prazo",
-    "Diversificação de Tipos",
-    "Sharpe Ratio",
-    "Multi-Objetivo"
-], help="Escolha como calcular o score.")
+POP_SIZE = st.sidebar.slider("Tamanho da População", 50, 500, 100, step=50, help="Número de portfólios iniciais. Populações maiores aumentam a diversidade, mas deixam o algoritmo mais lento.")
+NGEN = st.sidebar.slider("Máximo de Gerações", 10, 500, 100, step=10, help="Quantas iterações o algoritmo fará. Mais gerações aumentam a chance de encontrar bons portfólios.")
+CXPB = st.sidebar.slider("Probabilidade de Crossover", 0.5, 1.0, 0.7, step=0.05, help="Chance de combinar portfólios (recombinação genética). Valores altos aumentam a exploração.")
+MUTPB = st.sidebar.slider("Probabilidade de Mutação", 0.5, 1.0, 0.9, step=0.05, help="Chance de alterar portfólios (introduzir novidades). Valores altos aumentam a diversidade.")
+N_ATIVOS = st.sidebar.slider("Títulos por Portfólio", 3, min(10, len(raw_df)), 5, help="Quantos títulos em cada portfólio. Portfólios maiores tendem a ser mais diversificados.")
+# Estratégia agora é sempre multiobjetivo, mas mantenho o selectbox para explicar
+st.sidebar.selectbox("Estratégia de Score", ["Multi-Objetivo"], help="Agora sempre otimiza retorno, risco e diversidade simultaneamente (NSGA-II).", index=0, disabled=True)
 
 # Parâmetros avançados
-st.sidebar.header("🔧 Parâmetros Avançados")
-ELITE_SIZE = st.sidebar.slider("Tamanho da Elite (%)", 5, 20, 10, step=5, help="Percentual dos melhores indivíduos a preservar.")
-TOURNAMENT_SIZE = st.sidebar.slider("Tamanho do Torneio", 2, 8, 4, step=1, help="Tamanho do torneio para seleção.")
-DIVERSITY_THRESHOLD = st.sidebar.slider("Limiar de Diversidade", 0.1, 0.9, 0.3, step=0.1, help="Limiar para reinicialização por diversidade.")
+with st.sidebar.expander("🔧 Parâmetros Avançados", expanded=False):
+    ELITE_SIZE = st.slider("Tamanho da Elite (%)", 5, 20, 10, step=5, help="Percentual dos melhores indivíduos a preservar em cada geração.")
+    TOURNAMENT_SIZE = st.slider("Tamanho do Torneio", 2, 8, 4, step=1, help="Tamanho do torneio para seleção dos pais.")
+    DIVERSITY_THRESHOLD = st.slider("Limiar de Diversidade", 0.1, 0.9, 0.3, step=0.1, help="Limiar para reinicialização por diversidade. Se a população ficar muito parecida, parte dela é renovada.")
 
 # Validação de parâmetros
 if len(raw_df) < N_ATIVOS:
@@ -356,85 +349,120 @@ def rodar_otimizacao():
 
 # Botão para rodar com estilo visual
 if st.button("🚀 Rodar Otimização", help="Inicie a otimização com os parâmetros selecionados."):
+    import time as _time
+    start_time = _time.time()
     with st.spinner("🔄 Otimizando portfólio... Aguarde!"):
         pop, log = rodar_otimizacao()
+    elapsed = _time.time() - start_time
+    st.success(f"✅ Otimização concluída em {elapsed:.2f} segundos!")
 
-        if not pop:
-            st.error("❌ Erro na otimização. Verifique os parâmetros e tente novamente.")
-            st.stop()
+    if not pop:
+        st.error("❌ Erro na otimização. Verifique os parâmetros e tente novamente.")
+        st.stop()
 
-        # Exibir resultados em colunas para melhor layout
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("🏆 Melhor Portfólio Encontrado")
-            melhor = tools.selBest(pop, k=1)[0]
-            resultado = raw_df.iloc[melhor].copy()
-            resultado["Score"] = melhor.fitness.values[0]
-            st.dataframe(resultado.style.format({"Rentabilidade": "{:.2f}%", "Prazo": "{:.0f} dias"}))
+    # --- NOVA INTERFACE EM TABS ---
+    tabs = st.tabs(["Resumo", "Fronteira de Pareto", "Detalhes do Portfólio", "Configurações Avançadas", "Ajuda"])
 
-        with col2:
-            st.subheader("📊 Detalhes do Melhor Portfólio")
-            st.markdown(f"""
-            - **Score Final**: {melhor.fitness.values[0]:.4f}
-            - **Estratégia**: {estrategia}
-            - **Rentabilidade Média**: {resultado["Rentabilidade"].mean():.2f}%
-            - **Prazo Médio**: {resultado["Prazo"].mean():.0f} dias
-            - **Diversidade de Títulos**: {resultado["Tipo Titulo"].nunique()}
-            - **Risco (Desvio Padrão)**: {resultado["Rentabilidade"].std():.2f}%
-            """)
-            # --- EXPLICAÇÕES AUTOMÁTICAS ---
-            # Calcular métricas do melhor portfólio
-            melhor_div = resultado["Tipo Titulo"].nunique()
-            melhor_risco = resultado["Rentabilidade"].std()
-            melhor_retorno = resultado["Rentabilidade"].mean()
-            # Calcular métricas da população
-            divs = [raw_df.iloc[ind]["Tipo Titulo"].nunique() for ind in pop]
-            riscos = [raw_df.iloc[ind]["Rentabilidade"].std() for ind in pop]
-            retornos = [raw_df.iloc[ind]["Rentabilidade"].mean() for ind in pop]
-            # Percentis
-            pct_div = 100 * sum(melhor_div >= d for d in divs) / len(divs)
-            pct_risco = 100 * sum(melhor_risco < r for r in riscos) / len(riscos)
-            pct_retorno = 100 * sum(melhor_retorno > ret for ret in retornos) / len(retornos)
-            st.info(f"Seu portfólio é mais diversificado que {pct_div:.0f}% dos gerados.")
-            st.info(f"Seu portfólio tem risco menor que {pct_risco:.0f}% dos gerados.")
-            st.info(f"Seu portfólio tem retorno maior que {pct_retorno:.0f}% dos gerados.")
+    # --- FRONTEIRA DE PARETO ---
+    with tabs[1]:
+        st.subheader("🌈 Fronteira de Pareto (Portfólios Não-Dominados)")
+        # Identificar não-dominados
+        pareto = tools.sortNondominated(pop, k=len(pop), first_front_only=True)[0]
+        pareto_df = pd.DataFrame([
+            {
+                'Retorno (%)': raw_df.iloc[ind]["Rentabilidade"].mean(),
+                'Risco (%)': raw_df.iloc[ind]["Rentabilidade"].std(),
+                'Diversidade': raw_df.iloc[ind]["Tipo Titulo"].nunique(),
+                'Índices': ind
+            }
+            for ind in pareto
+        ])
+        st.dataframe(pareto_df, use_container_width=True)
+        # Exportar Pareto
+        csv = pareto_df.to_csv(index=False).encode('utf-8')
+        st.download_button("⬇️ Baixar Fronteira de Pareto (CSV)", csv, "pareto.csv", "text/csv")
+        # Seleção de portfólio
+        idx = st.selectbox("Selecione um portfólio para detalhes:", range(len(pareto)), format_func=lambda i: f"Portfólio {i+1}")
+        port_sel = pareto[idx]
+        st.success(f"Portfólio {idx+1} selecionado para análise detalhada.")
 
-        # Gráfico de Pareto em expander
-        with st.expander("📈 Gráfico de Pareto (Risco vs. Retorno)", expanded=True):
-            fig, ax = plt.subplots(figsize=(6, 4))
-            plt.style.use('seaborn-v0_8')
-            riscos = []
-            retornos = []
-            for ind in pop:
-                dados = raw_df.iloc[ind]
-                riscos.append(dados["Rentabilidade"].std() or 0)
-                retornos.append(dados["Rentabilidade"].mean())
+        # --- GRÁFICO DE PARETO ---
+        st.markdown("**Gráfico de Pareto: Risco vs. Retorno**")
+        fig, ax = plt.subplots(figsize=(6, 4))
+        riscos = pareto_df['Risco (%)']
+        retornos = pareto_df['Retorno (%)']
+        ax.scatter(riscos, retornos, alpha=0.7, color='blue', label='Fronteira de Pareto')
+        # Destacar o portfólio selecionado
+        ax.scatter(riscos.iloc[idx], retornos.iloc[idx], color='red', s=120, label=f'Selecionado ({idx+1})')
+        ax.set_title("Fronteira de Pareto (Risco x Retorno)", fontsize=12)
+        ax.set_xlabel("Risco (Desvio Padrão)", fontsize=10)
+        ax.set_ylabel("Retorno Médio (%)", fontsize=10)
+        ax.legend(fontsize=8)
+        ax.grid(True, linestyle='--', alpha=0.7)
+        ax.tick_params(labelsize=8)
+        fig.tight_layout()
+        st.pyplot(fig)
 
-            ax.scatter(riscos, retornos, alpha=0.6, color='blue', label='Portfólios')
-            # Destacar o melhor
-            melhor_dados = raw_df.iloc[melhor]
-            ax.scatter(melhor_dados["Rentabilidade"].std() or 0, melhor_dados["Rentabilidade"].mean(), color='red', s=100, label='Melhor Portfólio')
-            ax.set_title("Fronteira de Pareto", fontsize=12)
-            ax.set_xlabel("Risco (Desvio Padrão)", fontsize=10)
-            ax.set_ylabel("Retorno Médio (%)", fontsize=10)
-            ax.legend(fontsize=8)
-            ax.grid(True, linestyle='--', alpha=0.7)
-            ax.tick_params(labelsize=8)
-            fig.tight_layout()
-            st.pyplot(fig)
+    # --- DETALHES DO PORTFÓLIO SELECIONADO ---
+    with tabs[2]:
+        st.subheader(f"🔎 Detalhes do Portfólio Selecionado (Portfólio {idx+1})")
+        resultado = raw_df.iloc[port_sel].copy()
+        st.dataframe(resultado.style.format({"Rentabilidade": "{:.2f}%", "Prazo": "{:.0f} dias"}))
+        # Exportar portfólio
+        csv_port = resultado.to_csv(index=False).encode('utf-8')
+        st.download_button("⬇️ Baixar Portfólio Selecionado (CSV)", csv_port, f"portfolio_{idx+1}.csv", "text/csv")
+        # Gráfico de pizza da composição por tipo
+        tipo_counts = resultado["Tipo Titulo"].value_counts()
+        fig1, ax1 = plt.subplots()
+        ax1.pie(tipo_counts, labels=tipo_counts.index, autopct='%1.0f%%', startangle=90)
+        ax1.axis('equal')
+        st.pyplot(fig1)
+        # Gráfico de barras de rentabilidade
+        fig2, ax2 = plt.subplots()
+        resultado.plot.bar(x="Tipo Titulo", y="Rentabilidade", ax=ax2, color="#4CAF50")
+        st.pyplot(fig2)
 
-        # Análise de diversidade da população final
-        with st.expander("🌐 Análise de Diversidade da População", expanded=False):
-            diversidade_final = calcular_diversidade(pop)
-            st.metric("Diversidade da População Final", f"{diversidade_final:.3f}")
-            
-            # Histograma de scores
-            scores = [ind.fitness.values[0] for ind in pop]
-            fig, ax = plt.subplots(figsize=(6, 4))
-            ax.hist(scores, bins=20, alpha=0.7, color='green')
-            ax.axvline(float(np.mean(scores)), color='red', linestyle='--', label='Média')
-            ax.set_title("Distribuição de Scores da População Final")
-            ax.set_xlabel("Score")
-            ax.set_ylabel("Frequência")
-            ax.legend()
-            st.pyplot(fig)
+    # --- RESUMO (MELHOR PORTFÓLIO) ---
+    with tabs[0]:
+        st.subheader("🏆 Melhor Portfólio Encontrado")
+        melhor = tools.selBest(pop, k=1)[0]
+        resultado = raw_df.iloc[melhor].copy()
+        resultado["Score"] = melhor.fitness.values[0]
+        st.dataframe(resultado.style.format({"Rentabilidade": "{:.2f}%", "Prazo": "{:.0f} dias"}))
+        st.markdown(f"""
+        - **Score Final**: {melhor.fitness.values[0]:.4f}
+        - **Rentabilidade Média**: {resultado["Rentabilidade"].mean():.2f}%
+        - **Prazo Médio**: {resultado["Prazo"].mean():.0f} dias
+        - **Diversidade de Títulos**: {resultado["Tipo Titulo"].nunique()}
+        - **Risco (Desvio Padrão)**: {resultado["Rentabilidade"].std():.2f}%
+        """)
+        st.info("Veja a Fronteira de Pareto para comparar outros portfólios não-dominados.")
+
+    # --- CONFIGURAÇÕES AVANÇADAS ---
+    with tabs[3]:
+        st.subheader("⚙️ Parâmetros Avançados e Diversidade")
+        diversidade_final = calcular_diversidade(pop)
+        st.metric("Diversidade da População Final", f"{diversidade_final:.3f}")
+        # Histograma de scores
+        scores = [ind.fitness.values[0] for ind in pop]
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.hist(scores, bins=20, alpha=0.7, color='green')
+        ax.axvline(float(np.mean(scores)), color='red', linestyle='--', label='Média')
+        ax.set_title("Distribuição de Scores da População Final")
+        ax.set_xlabel("Score")
+        ax.set_ylabel("Frequência")
+        ax.legend()
+        st.pyplot(fig)
+
+    # --- AJUDA/TUTORIAL ---
+    with tabs[4]:
+        st.subheader("❓ Como Usar o Otimizador de Portfólio?")
+        st.markdown("""
+        1. Ajuste os parâmetros na barra lateral conforme seu perfil de risco.
+        2. Clique em "Rodar Otimização" para gerar portfólios.
+        3. Navegue pelas abas para comparar portfólios, ver detalhes e exportar resultados.
+        4. Use a Fronteira de Pareto para escolher o portfólio ideal para você!
+        """)
+
+# Ajustar contraste dos gráficos
+plt.rcParams.update({'axes.labelcolor': '#FAFAFA', 'xtick.color': '#FAFAFA', 'ytick.color': '#FAFAFA', 'text.color': '#FAFAFA'})
