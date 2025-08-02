@@ -69,7 +69,7 @@ with st.expander("ℹ️ Como o Score é Calculado", expanded=False):
 @st.cache_data(ttl=3600)  # Cache por 1 hora
 def carregar_dados():
     try:
-        url = "https://www.tesourotransparente.gov.br/ckan/dataset/df56aa42-484a-4a59-8184-7676580c81e3/resource/796d2059-14e9-44e3-80c9-2d9e30b405c1/download/precotaxatesourodireto.csv"
+        url = "https://drive.usercontent.google.com/uc?id=1aYGWSsM0A2slQwfC-nwz-WR7e3-WnVXM&export=download"
         r = requests.get(url, stream=True, timeout=30)
         r.raise_for_status()
         content = BytesIO()
